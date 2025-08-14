@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Square, Settings, Video, VideoOff } from 'lucide-react';
+import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { saveFramesAsVideo, getVideoCodecInfo } from '@/lib/videoUtils';
+import { useToast } from '@/hooks/use-toast';
 
 interface VideoRecorderProps {
   className?: string;
@@ -10,9 +12,12 @@ interface VideoRecorderProps {
 
 export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [isStreaming, setIsStreaming] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [delaySeconds, setDelaySeconds] = useState(3);
   const [frameBuffer, setFrameBuffer] = useState<string[]>([]);
   const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
+  const { toast } = useToast();
   
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const delayedCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -21,29 +26,29 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const captureFrame = useCallback(() => {
-    if (liveVideoRef.current && delayedCanvasRef.current) {
-      const canvas = delayedCanvasRef.current;
-      const ctx = canvas.getContext('2d');
-      const video = liveVideoRef.current;
+    if (isPaused || !liveVideoRef.current || !delayedCanvasRef.current) return;
+    const canvas = delayedCanvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const video = liveVideoRef.current;
+    
+    if (ctx && video.videoWidth > 0) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       
-      if (ctx && video.videoWidth > 0) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        const frameData = canvas.toDataURL('image/jpeg', 0.8);
-        
-        setFrameBuffer(prevBuffer => {
-          const newBuffer = [...prevBuffer, frameData];
-          // Keep buffer size reasonable (max 30 seconds at 10fps = 300 frames)
-          const maxFrames = Math.max(delaySeconds * 10, 30);
-          return newBuffer.slice(-maxFrames);
-        });
-      }
+      const frameData = canvas.toDataURL('image/jpeg', 0.8);
+      
+      setFrameBuffer(prevBuffer => {
+        const newBuffer = [...prevBuffer, frameData];
+        // Keep buffer size reasonable (max 30 seconds at 10fps = 300 frames)
+        const maxFrames = Math.max(delaySeconds * 10, 300);
+        return newBuffer.slice(-maxFrames);
+      });
     }
-  }, [delaySeconds]);
+  }, [delaySeconds, isPaused]);
 
   const playDelayedFrames = useCallback(() => {
+    if (isPaused) return;
     setFrameBuffer(prevBuffer => {
       const framesToDelay = delaySeconds * 10; // 10 FPS
       if (prevBuffer.length >= framesToDelay) {
@@ -52,7 +57,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
       }
       return prevBuffer;
     });
-  }, [delaySeconds]);
+  }, [delaySeconds, isPaused]);
 
   const startStream = async () => {
     try {
@@ -86,11 +91,20 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   };
 
   const stopStream = () => {
+    pauseStream(); // This will clear intervals
+    
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
     
+    setIsStreaming(false);
+    setIsPaused(false);
+    setFrameBuffer([]);
+    setCurrentDelayedFrame(null);
+  };
+
+  const pauseStream = () => {
     if (captureIntervalRef.current) {
       clearInterval(captureIntervalRef.current);
       captureIntervalRef.current = null;
@@ -101,9 +115,55 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
       playbackIntervalRef.current = null;
     }
     
-    setIsStreaming(false);
-    setFrameBuffer([]);
-    setCurrentDelayedFrame(null);
+    setIsPaused(true);
+  };
+
+  const resumeStream = () => {
+    if (isStreaming) {
+      // Restart capture and playback intervals
+      captureIntervalRef.current = setInterval(captureFrame, 100);
+      playbackIntervalRef.current = setInterval(playDelayedFrames, 100);
+      setIsPaused(false);
+    }
+  };
+
+  const saveCurrentBuffer = async () => {
+    if (frameBuffer.length === 0) {
+      toast({
+        title: "No frames to save",
+        description: "Start recording to build a frame buffer first.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const codecInfo = getVideoCodecInfo();
+      const filename = `workout-form-${timestamp}.${codecInfo.includes('MP4') ? 'mp4' : 'webm'}`;
+      
+      await saveFramesAsVideo({
+        frames: frameBuffer,
+        fps: 10,
+        filename
+      });
+
+      toast({
+        title: "Video saved successfully!",
+        description: `Saved as ${filename} using ${codecInfo} codec.`,
+      });
+    } catch (error) {
+      console.error('Error saving video:', error);
+      toast({
+        title: "Error saving video",
+        description: "There was a problem saving your video. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Cleanup on unmount
@@ -127,7 +187,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
         playbackIntervalRef.current = setInterval(playDelayedFrames, 100);
       }
     }
-  }, [delaySeconds, captureFrame, playDelayedFrames, isStreaming]);
+  }, [delaySeconds, captureFrame, playDelayedFrames, isStreaming, isPaused]);
 
   return (
     <Card className={cn("p-6 shadow-card transition-smooth", className)}>
@@ -143,15 +203,21 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                 className="w-full h-full object-cover"
                 playsInline
                 muted
-                style={{ display: isStreaming ? 'block' : 'none' }}
+                style={{ display: isStreaming && !isPaused ? 'block' : 'none' }}
               />
-              {!isStreaming && (
+              {(!isStreaming || isPaused) && (
                 <div className="w-full h-full flex items-center justify-center">
                   <div className="text-center space-y-2">
                     <div className="w-16 h-16 mx-auto rounded-full bg-primary/20 flex items-center justify-center">
-                      <Video className="w-8 h-8 text-primary" />
+                      {isPaused ? (
+                        <Pause className="w-8 h-8 text-primary" />
+                      ) : (
+                        <Video className="w-8 h-8 text-primary" />
+                      )}
                     </div>
-                    <p className="text-muted-foreground text-sm">Start camera to begin</p>
+                    <p className="text-muted-foreground text-sm">
+                      {isPaused ? 'Camera paused' : 'Start camera to begin'}
+                    </p>
                   </div>
                 </div>
               )}
@@ -177,7 +243,14 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                       <Settings className="w-8 h-8 text-accent animate-spin" />
                     </div>
                     <p className="text-muted-foreground text-sm">
-                      {isStreaming ? 'Building delay buffer...' : 'Waiting for camera'}
+                      {isStreaming && !isPaused
+                        ? frameBuffer.length > delaySeconds * 10 
+                          ? 'Delayed feed active'
+                          : 'Building delay buffer...'
+                        : isPaused 
+                          ? 'Feed paused'
+                          : 'Waiting for camera'
+                      }
                     </p>
                   </div>
                 </div>
@@ -192,29 +265,75 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
         {/* Controls */}
         <div className="space-y-4">
           {/* Camera Controls */}
-          <div className="flex gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {!isStreaming ? (
               <Button
                 onClick={startStream}
                 variant="fitness"
                 size="lg"
-                className="flex-1"
+                className="col-span-2"
               >
                 <Video className="w-4 h-4 mr-2" />
                 Start Camera
               </Button>
             ) : (
-              <Button
-                onClick={stopStream}
-                variant="destructive"
-                size="lg"
-                className="flex-1"
-              >
-                <VideoOff className="w-4 h-4 mr-2" />
-                Stop Camera
-              </Button>
+              <>
+                <Button
+                  onClick={isPaused ? resumeStream : pauseStream}
+                  variant={isPaused ? "accent" : "secondary"}
+                  size="lg"
+                >
+                  {isPaused ? (
+                    <>
+                      <Play className="w-4 h-4 mr-2" />
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-4 h-4 mr-2" />
+                      Pause
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={stopStream}
+                  variant="destructive"
+                  size="lg"
+                >
+                  <VideoOff className="w-4 h-4 mr-2" />
+                  Stop
+                </Button>
+              </>
             )}
           </div>
+
+          {/* Save Controls */}
+          {frameBuffer.length > 0 && (
+            <div className="space-y-3">
+              <Button
+                onClick={saveCurrentBuffer}
+                variant="outline"
+                size="lg"
+                className="w-full"
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving Video...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4 mr-2" />
+                    Save Current Buffer ({frameBuffer.length} frames)
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                Video will be saved as {getVideoCodecInfo()} format
+              </p>
+            </div>
+          )}
 
           {/* Delay Settings */}
           <div className="space-y-3">
@@ -244,12 +363,22 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
           {/* Status */}
           {isStreaming && (
             <div className="text-center space-y-1">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-fitness-success/20 text-fitness-success">
-                <div className="w-2 h-2 rounded-full bg-fitness-success animate-pulse" />
-                <span className="text-sm font-medium">Live Recording</span>
+              <div className={cn(
+                "inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium transition-smooth",
+                isPaused 
+                  ? "bg-fitness-warning/20 text-fitness-warning"
+                  : "bg-fitness-success/20 text-fitness-success"
+              )}>
+                <div className={cn(
+                  "w-2 h-2 rounded-full transition-smooth",
+                  isPaused 
+                    ? "bg-fitness-warning"
+                    : "bg-fitness-success animate-pulse"
+                )} />
+                <span>{isPaused ? 'Camera Paused' : 'Live Recording'}</span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Buffer: {frameBuffer.length} frames
+                Buffer: {frameBuffer.length} frames ({Math.round(frameBuffer.length / 10)}s)
               </p>
             </div>
           )}
