@@ -52,6 +52,12 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				fitness: {
+					primary: 'hsl(var(--fitness-primary))',
+					accent: 'hsl(var(--fitness-accent))',
+					success: 'hsl(var(--fitness-success))',
+					warning: 'hsl(var(--fitness-warning))'
+				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
