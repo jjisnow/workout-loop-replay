@@ -13,13 +13,13 @@ export const WorkoutHeader: React.FC = () => {
           Form Checker
         </h1>
         <p className="text-muted-foreground text-lg">
-          Record, review, and perfect your workout technique
+          Live delayed video feed for real-time form checking
         </p>
       </div>
 
       <div className="flex items-center justify-center gap-2 text-sm text-accent">
         <Timer className="w-4 h-4" />
-        <span>Real-time form analysis</span>
+        <span>Live delayed monitoring</span>
       </div>
     </div>
   );

@@ -21,9 +21,10 @@ const Index = () => {
             <h3 className="text-lg font-semibold mb-3 text-primary">How to use</h3>
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>1. Position your device where it can see your workout area</p>
-              <p>2. Start recording and perform your exercise</p>
-              <p>3. Stop recording when finished</p>
-              <p>4. Use delayed playback to review your form without rushing</p>
+              <p>2. Start the camera for live streaming</p>
+              <p>3. Watch the delayed feed to analyze your form in real-time</p>
+              <p>4. Adjust delay timing (1-10 seconds) as needed</p>
+              <p>5. Perfect your technique with continuous visual feedback</p>
             </div>
           </div>
         </div>
