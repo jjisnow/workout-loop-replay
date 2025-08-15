@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2 } from 'lucide-react';
+import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { saveFramesAsVideo, getVideoCodecInfo } from '@/lib/videoUtils';
 import { useToast } from '@/hooks/use-toast';
@@ -14,10 +14,13 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [delaySeconds, setDelaySeconds] = useState(3);
+  const [delaySeconds, setDelaySeconds] = useState(15);
   const [frameBuffer, setFrameBuffer] = useState<string[]>([]);
   const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const { toast } = useToast();
+  
+  const delayedContainerRef = useRef<HTMLDivElement>(null);
   
   const liveVideoRef = useRef<HTMLVideoElement>(null);
   const delayedCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,9 +43,12 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
       
       setFrameBuffer(prevBuffer => {
         const newBuffer = [...prevBuffer, frameData];
-        // Keep buffer size reasonable (max 30 seconds at 10fps = 300 frames)
-        const maxFrames = Math.max(delaySeconds * 10, 300);
-        return newBuffer.slice(-maxFrames);
+        // Keep buffer at configured size, drop frames from front when full
+        const maxFrames = delaySeconds * 10; // 10 FPS
+        if (newBuffer.length > maxFrames) {
+          return newBuffer.slice(newBuffer.length - maxFrames);
+        }
+        return newBuffer;
       });
     }
   }, [delaySeconds, isPaused]);
@@ -126,6 +132,36 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
       setIsPaused(false);
     }
   };
+
+  const toggleFullscreen = async () => {
+    if (!delayedContainerRef.current) return;
+
+    try {
+      if (!isFullscreen) {
+        if (delayedContainerRef.current.requestFullscreen) {
+          await delayedContainerRef.current.requestFullscreen();
+        }
+        setIsFullscreen(true);
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+        setIsFullscreen(false);
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error);
+    }
+  };
+
+  // Handle fullscreen change events
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const saveCurrentBuffer = async () => {
     if (frameBuffer.length === 0) {
@@ -226,10 +262,34 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
 
           {/* Delayed Feed */}
           <div className="space-y-2">
-            <h3 className="text-sm font-medium text-center">
-              Delayed View ({delaySeconds}s behind)
-            </h3>
-            <div className="relative aspect-video bg-secondary rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-center flex-1">
+                Delayed View ({delaySeconds}s behind)
+              </h3>
+              {currentDelayedFrame && (
+                <Button
+                  onClick={toggleFullscreen}
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                >
+                  {isFullscreen ? (
+                    <Minimize className="w-3 h-3" />
+                  ) : (
+                    <Maximize className="w-3 h-3" />
+                  )}
+                </Button>
+              )}
+            </div>
+            <div 
+              ref={delayedContainerRef}
+              className={cn(
+                "relative bg-secondary rounded-lg overflow-hidden transition-smooth",
+                isFullscreen 
+                  ? "fixed inset-0 z-50 bg-black rounded-none" 
+                  : "aspect-video"
+              )}
+            >
               {currentDelayedFrame ? (
                 <img
                   src={currentDelayedFrame}
@@ -253,6 +313,21 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                       }
                     </p>
                   </div>
+                </div>
+              )}
+              
+              {/* Fullscreen overlay controls */}
+              {isFullscreen && (
+                <div className="absolute top-4 right-4">
+                  <Button
+                    onClick={toggleFullscreen}
+                    variant="secondary"
+                    size="sm"
+                    className="bg-black/50 backdrop-blur-sm"
+                  >
+                    <Minimize className="w-4 h-4 mr-2" />
+                    Exit Fullscreen
+                  </Button>
                 </div>
               )}
             </div>
@@ -344,7 +419,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
             <input
               type="range"
               min="1"
-              max="10"
+              max="30"
               value={delaySeconds}
               onChange={(e) => setDelaySeconds(Number(e.target.value))}
               className="w-full h-3 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
@@ -355,8 +430,8 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>1s</span>
-              <span>5s</span>
-              <span>10s</span>
+              <span>15s</span>
+              <span>30s</span>
             </div>
           </div>
 
