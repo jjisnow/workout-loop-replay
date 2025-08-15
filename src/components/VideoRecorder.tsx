@@ -14,7 +14,8 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [delaySeconds, setDelaySeconds] = useState(15);
+  const [delaySeconds, setDelaySeconds] = useState(6);
+  const [bufferSeconds, setBufferSeconds] = useState(15);
   const [frameBuffer, setFrameBuffer] = useState<string[]>([]);
   const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -44,14 +45,14 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
       setFrameBuffer(prevBuffer => {
         const newBuffer = [...prevBuffer, frameData];
         // Keep buffer at configured size, drop frames from front when full
-        const maxFrames = delaySeconds * 10; // 10 FPS
+        const maxFrames = bufferSeconds * 10; // 10 FPS
         if (newBuffer.length > maxFrames) {
           return newBuffer.slice(newBuffer.length - maxFrames);
         }
         return newBuffer;
       });
     }
-  }, [delaySeconds, isPaused]);
+  }, [bufferSeconds, isPaused]);
 
   const playDelayedFrames = useCallback(() => {
     if (isPaused) return;
@@ -432,6 +433,31 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               <span>1s</span>
               <span>15s</span>
               <span>30s</span>
+            </div>
+          </div>
+
+          {/* Buffer Size Settings */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Buffer Size (seconds)</label>
+              <span className="text-sm text-accent font-semibold">{bufferSeconds}s</span>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="60"
+              value={bufferSeconds}
+              onChange={(e) => setBufferSeconds(Number(e.target.value))}
+              className="w-full h-3 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
+                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 
+                [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent 
+                [&::-webkit-slider-thumb]:shadow-glow [&::-webkit-slider-thumb]:transition-smooth
+                [&::-webkit-slider-thumb]:hover:scale-110"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>5s</span>
+              <span>30s</span>
+              <span>60s</span>
             </div>
           </div>
 
