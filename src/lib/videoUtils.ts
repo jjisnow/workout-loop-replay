@@ -35,13 +35,13 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
     // Create MediaRecorder with best available codec
     const stream = canvas.captureStream(fps);
     
-    // Try to use the best available codec (browsers don't support HEVC encoding yet)
-    // We'll use H.264 (MP4) as the best alternative
+    // Try to use the best available codec with AV1 as preferred
     const mimeTypes = [
-      'video/mp4; codecs="avc1.42E01E"', // H.264 baseline
-      'video/webm; codecs="vp9"',        // VP9
-      'video/webm; codecs="vp8"',        // VP8
-      'video/webm'                       // Fallback
+      'video/webm; codecs="av01.0.05M.08"', // AV1
+      'video/mp4; codecs="avc1.42E01E"',     // H.264 baseline
+      'video/webm; codecs="vp9"',            // VP9
+      'video/webm; codecs="vp8"',            // VP8
+      'video/webm'                           // Fallback
     ];
 
     let selectedMimeType = '';
@@ -118,6 +118,7 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
 
 export const getVideoCodecInfo = (): string => {
   const mimeTypes = [
+    { name: 'AV1 (WebM)', type: 'video/webm; codecs="av01.0.05M.08"' },
     { name: 'H.264 (MP4)', type: 'video/mp4; codecs="avc1.42E01E"' },
     { name: 'VP9 (WebM)', type: 'video/webm; codecs="vp9"' },
     { name: 'VP8 (WebM)', type: 'video/webm; codecs="vp8"' },

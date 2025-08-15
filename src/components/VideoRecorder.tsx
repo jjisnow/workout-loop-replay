@@ -16,6 +16,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [delaySeconds, setDelaySeconds] = useState(6);
   const [bufferSeconds, setBufferSeconds] = useState(15);
+  const [resolution, setResolution] = useState<'720p' | '1080p'>('720p');
   const [frameBuffer, setFrameBuffer] = useState<string[]>([]);
   const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -68,11 +69,14 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
 
   const startStream = async () => {
     try {
+      const videoConstraints = resolution === '1080p' 
+        ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
+        : { width: { ideal: 1280 }, height: { ideal: 720 } };
+        
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
           facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          ...videoConstraints
         }, 
         audio: false 
       });
@@ -458,6 +462,30 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               <span>5s</span>
               <span>30s</span>
               <span>60s</span>
+            </div>
+          </div>
+
+          {/* Resolution Settings */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Video Resolution</label>
+              <span className="text-sm text-accent font-semibold">{resolution}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              value={resolution === '1080p' ? 1 : 0}
+              onChange={(e) => setResolution(e.target.value === '1' ? '1080p' : '720p')}
+              className="w-full h-3 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
+                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 
+                [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary 
+                [&::-webkit-slider-thumb]:shadow-glow [&::-webkit-slider-thumb]:transition-smooth
+                [&::-webkit-slider-thumb]:hover:scale-110"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>720p</span>
+              <span>1080p</span>
             </div>
           </div>
 
