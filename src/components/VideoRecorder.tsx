@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { saveFramesAsVideo, getVideoCodecInfo } from '@/lib/videoUtils';
+import { saveFramesAsVideo, getVideoCodecInfo, getSupportedCodecs } from '@/lib/videoUtils';
 import { useToast } from '@/hooks/use-toast';
 
 interface VideoRecorderProps {
@@ -18,6 +18,8 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [delaySeconds, setDelaySeconds] = useState(6);
   const [bufferSeconds, setBufferSeconds] = useState(15);
   const [resolution, setResolution] = useState<'720p' | '1080p'>('720p');
+  const [selectedCodec, setSelectedCodec] = useState<'av1' | 'hevc' | 'h264' | 'vp9'>('av1');
+  const [selectedContainer, setSelectedContainer] = useState<'mp4' | 'mkv' | 'webm'>('mp4');
   const [frameBuffer, setFrameBuffer] = useState<string[]>([]);
   const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -184,13 +186,17 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
     
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const codecInfo = getVideoCodecInfo();
-      const filename = `workout-form-${timestamp}.${codecInfo.includes('MP4') ? 'mp4' : 'webm'}`;
+      const codecInfo = getVideoCodecInfo(selectedCodec, selectedContainer);
+      const fileExtension = selectedContainer === 'mkv' ? 'mkv' : 
+                           selectedContainer === 'webm' ? 'webm' : 'mp4';
+      const filename = `workout-form-${timestamp}.${fileExtension}`;
       
       await saveFramesAsVideo({
         frames: frameBuffer,
         fps: 10,
-        filename
+        filename,
+        codec: selectedCodec,
+        container: selectedContainer
       });
 
       toast({
@@ -523,8 +529,60 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                 </div>
               </div>
 
+              {/* Codec Selection */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Video Codec</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {getSupportedCodecs().map((codec) => (
+                    <Button
+                      key={codec.value}
+                      onClick={() => setSelectedCodec(codec.value as any)}
+                      variant={selectedCodec === codec.value ? 'fitness' : codec.supported ? 'outline' : 'secondary'}
+                      size="sm"
+                      className="text-xs"
+                      disabled={!codec.supported}
+                      title={!codec.supported ? 'Not supported in this browser' : ''}
+                    >
+                      {codec.label}
+                      {!codec.supported && ' ❌'}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Container Format Selection */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Container Format</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    onClick={() => setSelectedContainer('mp4')}
+                    variant={selectedContainer === 'mp4' ? 'fitness' : 'outline'}
+                    size="sm"
+                    className="text-xs"
+                  >
+                    MP4
+                  </Button>
+                  <Button
+                    onClick={() => setSelectedContainer('mkv')}
+                    variant={selectedContainer === 'mkv' ? 'fitness' : 'outline'}
+                    size="sm"
+                    className="text-xs"
+                  >
+                    MKV
+                  </Button>
+                  <Button
+                    onClick={() => setSelectedContainer('webm')}
+                    variant={selectedContainer === 'webm' ? 'fitness' : 'outline'}
+                    size="sm"
+                    className="text-xs"
+                  >
+                    WebM
+                  </Button>
+                </div>
+              </div>
+
               <p className="text-xs text-muted-foreground text-center">
-                Videos saved as {getVideoCodecInfo()} format
+                Videos saved as {getVideoCodecInfo(selectedCodec, selectedContainer)} format
               </p>
             </CollapsibleContent>
           </Collapsible>
