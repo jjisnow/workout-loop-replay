@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { saveFramesAsVideo, getVideoCodecInfo } from '@/lib/videoUtils';
 import { useToast } from '@/hooks/use-toast';
@@ -20,6 +21,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [frameBuffer, setFrameBuffer] = useState<string[]>([]);
   const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const { toast } = useToast();
   
   const delayedContainerRef = useRef<HTMLDivElement>(null);
@@ -231,45 +233,15 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   }, [delaySeconds, captureFrame, playDelayedFrames, isStreaming, isPaused]);
 
   return (
-    <Card className={cn("p-6 shadow-card transition-smooth", className)}>
-      <div className="space-y-6">
-        {/* Video Display */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Live Feed */}
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-center">Live Feed</h3>
-            <div className="relative aspect-video bg-secondary rounded-lg overflow-hidden">
-              <video
-                ref={liveVideoRef}
-                className="w-full h-full object-cover"
-                playsInline
-                muted
-                style={{ display: isStreaming && !isPaused ? 'block' : 'none' }}
-              />
-              {(!isStreaming || isPaused) && (
-                <div className="w-full h-full flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <div className="w-16 h-16 mx-auto rounded-full bg-primary/20 flex items-center justify-center">
-                      {isPaused ? (
-                        <Pause className="w-8 h-8 text-primary" />
-                      ) : (
-                        <Video className="w-8 h-8 text-primary" />
-                      )}
-                    </div>
-                    <p className="text-muted-foreground text-sm">
-                      {isPaused ? 'Camera paused' : 'Start camera to begin'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Delayed Feed */}
+    <Card className={cn("p-3 sm:p-6 shadow-card transition-smooth", className)}>
+      <div className="space-y-3 sm:space-y-6">
+        {/* Video Display - Mobile Optimized */}
+        <div className="space-y-3">
+          {/* Delayed Feed - Primary focus on mobile */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-center flex-1">
-                Delayed View ({delaySeconds}s behind)
+              <h3 className="text-sm font-medium">
+                Delayed View ({delaySeconds}s)
               </h3>
               {currentDelayedFrame && (
                 <Button
@@ -304,10 +276,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <div className="text-center space-y-2">
-                    <div className="w-16 h-16 mx-auto rounded-full bg-accent/20 flex items-center justify-center">
-                      <Settings className="w-8 h-8 text-accent animate-spin" />
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-full bg-accent/20 flex items-center justify-center">
+                      <Settings className="w-6 h-6 sm:w-8 sm:h-8 text-accent animate-spin" />
                     </div>
-                    <p className="text-muted-foreground text-sm">
+                    <p className="text-muted-foreground text-xs sm:text-sm">
                       {isStreaming && !isPaused
                         ? frameBuffer.length > delaySeconds * 10 
                           ? 'Delayed feed active'
@@ -337,15 +309,45 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               )}
             </div>
           </div>
+
+          {/* Live Feed - Smaller on mobile */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Live Feed</h3>
+            <div className="relative aspect-video sm:aspect-[4/3] bg-secondary rounded-lg overflow-hidden">
+              <video
+                ref={liveVideoRef}
+                className="w-full h-full object-cover"
+                playsInline
+                muted
+                style={{ display: isStreaming && !isPaused ? 'block' : 'none' }}
+              />
+              {(!isStreaming || isPaused) && (
+                <div className="w-full h-full flex items-center justify-center">
+                  <div className="text-center space-y-1 sm:space-y-2">
+                    <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-full bg-primary/20 flex items-center justify-center">
+                      {isPaused ? (
+                        <Pause className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
+                      ) : (
+                        <Video className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
+                      )}
+                    </div>
+                    <p className="text-muted-foreground text-xs sm:text-sm">
+                      {isPaused ? 'Camera paused' : 'Start camera to begin'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Hidden canvas for frame capture */}
         <canvas ref={delayedCanvasRef} style={{ display: 'none' }} />
 
-        {/* Controls */}
-        <div className="space-y-4">
+        {/* Controls - Mobile Optimized */}
+        <div className="space-y-3">
           {/* Camera Controls */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {!isStreaming ? (
               <Button
                 onClick={startStream}
@@ -387,111 +389,21 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
             )}
           </div>
 
-          {/* Save Controls */}
-          {frameBuffer.length > 0 && (
-            <div className="space-y-3">
-              <Button
-                onClick={saveCurrentBuffer}
-                variant="outline"
-                size="lg"
-                className="w-full"
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving Video...
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4 mr-2" />
-                    Save Current Buffer ({frameBuffer.length} frames)
-                  </>
-                )}
-              </Button>
-              <p className="text-xs text-muted-foreground text-center">
-                Video will be saved as {getVideoCodecInfo()} format
-              </p>
+          {/* Quick Settings - Always visible */}
+          <div className="grid grid-cols-2 gap-2 text-center">
+            <div className="bg-secondary/50 rounded-lg p-2">
+              <p className="text-xs text-muted-foreground">Delay</p>
+              <p className="text-lg font-semibold text-accent">{delaySeconds}s</p>
             </div>
-          )}
-
-          {/* Delay Settings */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Delay (seconds)</label>
-              <span className="text-sm text-accent font-semibold">{delaySeconds}s</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="30"
-              value={delaySeconds}
-              onChange={(e) => setDelaySeconds(Number(e.target.value))}
-              className="w-full h-3 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
-                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 
-                [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary 
-                [&::-webkit-slider-thumb]:shadow-glow [&::-webkit-slider-thumb]:transition-smooth
-                [&::-webkit-slider-thumb]:hover:scale-110"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>1s</span>
-              <span>15s</span>
-              <span>30s</span>
-            </div>
-          </div>
-
-          {/* Buffer Size Settings */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Buffer Size (seconds)</label>
-              <span className="text-sm text-accent font-semibold">{bufferSeconds}s</span>
-            </div>
-            <input
-              type="range"
-              min="5"
-              max="60"
-              value={bufferSeconds}
-              onChange={(e) => setBufferSeconds(Number(e.target.value))}
-              className="w-full h-3 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
-                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 
-                [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent 
-                [&::-webkit-slider-thumb]:shadow-glow [&::-webkit-slider-thumb]:transition-smooth
-                [&::-webkit-slider-thumb]:hover:scale-110"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>5s</span>
-              <span>30s</span>
-              <span>60s</span>
-            </div>
-          </div>
-
-          {/* Resolution Settings */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Video Resolution</label>
-              <span className="text-sm text-accent font-semibold">{resolution}</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              value={resolution === '1080p' ? 1 : 0}
-              onChange={(e) => setResolution(e.target.value === '1' ? '1080p' : '720p')}
-              className="w-full h-3 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
-                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 
-                [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary 
-                [&::-webkit-slider-thumb]:shadow-glow [&::-webkit-slider-thumb]:transition-smooth
-                [&::-webkit-slider-thumb]:hover:scale-110"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>720p</span>
-              <span>1080p</span>
+            <div className="bg-secondary/50 rounded-lg p-2">
+              <p className="text-xs text-muted-foreground">Quality</p>
+              <p className="text-lg font-semibold text-primary">{resolution}</p>
             </div>
           </div>
 
           {/* Status */}
           {isStreaming && (
-            <div className="text-center space-y-1">
+            <div className="text-center">
               <div className={cn(
                 "inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium transition-smooth",
                 isPaused 
@@ -504,13 +416,118 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                     ? "bg-fitness-warning"
                     : "bg-fitness-success animate-pulse"
                 )} />
-                <span>{isPaused ? 'Camera Paused' : 'Live Recording'}</span>
+                <span>{isPaused ? 'Paused' : 'Recording'}</span>
+                <span className="text-xs opacity-70">• {Math.round(frameBuffer.length / 10)}s</span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Buffer: {frameBuffer.length} frames ({Math.round(frameBuffer.length / 10)}s)
-              </p>
             </div>
           )}
+
+          {/* Save Controls */}
+          {frameBuffer.length > 0 && (
+            <Button
+              onClick={saveCurrentBuffer}
+              variant="outline"
+              size="lg"
+              className="w-full"
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  Save Video ({Math.round(frameBuffer.length / 10)}s)
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* Advanced Settings - Collapsible */}
+          <Collapsible open={showSettings} onOpenChange={setShowSettings}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" className="w-full justify-between">
+                <span className="text-sm">Advanced Settings</span>
+                <ChevronDown className={cn("h-4 w-4 transition-transform", showSettings && "rotate-180")} />
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="space-y-3 mt-3">
+              {/* Delay Settings */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Delay</label>
+                  <span className="text-sm text-accent font-semibold">{delaySeconds}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="30"
+                  value={delaySeconds}
+                  onChange={(e) => setDelaySeconds(Number(e.target.value))}
+                  className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary 
+                    [&::-webkit-slider-thumb]:transition-smooth"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>1s</span>
+                  <span>30s</span>
+                </div>
+              </div>
+
+              {/* Buffer Size Settings */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Buffer Size</label>
+                  <span className="text-sm text-accent font-semibold">{bufferSeconds}s</span>
+                </div>
+                <input
+                  type="range"
+                  min="5"
+                  max="60"
+                  value={bufferSeconds}
+                  onChange={(e) => setBufferSeconds(Number(e.target.value))}
+                  className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent 
+                    [&::-webkit-slider-thumb]:transition-smooth"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>5s</span>
+                  <span>60s</span>
+                </div>
+              </div>
+
+              {/* Resolution Settings */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">Resolution</label>
+                  <span className="text-sm text-accent font-semibold">{resolution}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  value={resolution === '1080p' ? 1 : 0}
+                  onChange={(e) => setResolution(e.target.value === '1' ? '1080p' : '720p')}
+                  className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary 
+                    [&::-webkit-slider-thumb]:transition-smooth"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>720p</span>
+                  <span>1080p</span>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground text-center">
+                Videos saved as {getVideoCodecInfo()} format
+              </p>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       </div>
     </Card>

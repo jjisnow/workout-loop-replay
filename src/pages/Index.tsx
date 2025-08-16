@@ -8,25 +8,25 @@ const Index = () => {
       {/* Background gradient */}
       <div className="fixed inset-0 gradient-secondary opacity-50" />
       
-      <div className="relative z-10 container mx-auto px-4 py-8">
-        <WorkoutHeader />
+      <div className="relative z-10 container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+        {/* Compact Header for Mobile */}
+        <div className="text-center space-y-2 sm:space-y-4 mb-4 sm:mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full gradient-primary shadow-glow">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 text-white">🏋️</div>
+          </div>
+          
+          <div className="space-y-1 sm:space-y-2">
+            <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              Form Checker
+            </h1>
+            <p className="text-muted-foreground text-sm sm:text-lg">
+              Live delayed video for form analysis
+            </p>
+          </div>
+        </div>
         
         <div className="max-w-2xl mx-auto">
           <VideoRecorder />
-        </div>
-        
-        {/* Instructions */}
-        <div className="max-w-2xl mx-auto mt-8 space-y-4 text-center">
-          <div className="bg-card/80 backdrop-blur-sm rounded-lg p-6 shadow-card">
-            <h3 className="text-lg font-semibold mb-3 text-primary">How to use</h3>
-            <div className="space-y-2 text-sm text-muted-foreground">
-              <p>1. Position your device where it can see your workout area</p>
-              <p>2. Start the camera for live streaming</p>
-              <p>3. Watch the delayed feed to analyze your form in real-time</p>
-              <p>4. Adjust delay timing (1-10 seconds) as needed</p>
-              <p>5. Perfect your technique with continuous visual feedback</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>
