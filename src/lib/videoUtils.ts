@@ -236,52 +236,129 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<Vide
   }
 };
 
-export const getVideoCodecInfo = (codec: string = 'auto', container: string = 'auto'): string => {
+export const getResolvedFormat = (codec: string = 'auto', container: string = 'auto'): { codec: string; container: string; displayName: string } => {
+  // Define codec priority order: AV1 > HEVC > H.264 > VP9
+  const codecPriority = ['av1', 'hevc', 'h264', 'vp9'];
+  
+  // Define container priority order: MKV > MP4 > WebM
+  const containerPriority = ['mkv', 'mp4', 'webm'];
+  
+  // Map codecs to their MIME type variants with container preferences
   const codecMap = {
     av1: [
-      { name: 'AV1 (WebM)', type: 'video/webm; codecs="av01.0.05M.08"' },
-      { name: 'AV1 (MP4)', type: 'video/mp4; codecs="av01.0.05M.08"' }
+      { type: 'video/x-matroska; codecs="av01.0.05M.08"', container: 'mkv' },
+      { type: 'video/mp4; codecs="av01.0.05M.08"', container: 'mp4' },
+      { type: 'video/webm; codecs="av01.0.05M.08"', container: 'webm' },
+      { type: 'video/webm; codecs="av01.0.08M.08"', container: 'webm' },
+      { type: 'video/webm; codecs="av01"', container: 'webm' },
+      { type: 'video/mp4; codecs="av01"', container: 'mp4' }
     ],
     hevc: [
-      { name: 'HEVC (MP4)', type: 'video/mp4; codecs="hev1.1.6.L93.B0"' },
-      { name: 'HEVC (MP4)', type: 'video/mp4; codecs="hvc1.1.6.L93.B0"' }
+      { type: 'video/x-matroska; codecs="hev1.1.6.L93.B0"', container: 'mkv' },
+      { type: 'video/mp4; codecs="hev1.1.6.L93.B0"', container: 'mp4' },
+      { type: 'video/mp4; codecs="hvc1.1.6.L93.B0"', container: 'mp4' }
     ],
     h264: [
-      { name: 'H.264 (MP4)', type: 'video/mp4; codecs="avc1.42E01E"' },
-      { name: 'H.264 (WebM)', type: 'video/webm; codecs="h264"' }
+      { type: 'video/x-matroska; codecs="avc1.42E01E"', container: 'mkv' },
+      { type: 'video/mp4; codecs="avc1.42E01E"', container: 'mp4' },
+      { type: 'video/webm; codecs="h264"', container: 'webm' }
     ],
     vp9: [
-      { name: 'VP9 (WebM)', type: 'video/webm; codecs="vp9"' },
-      { name: 'VP9 (MP4)', type: 'video/mp4; codecs="vp09.00.10.08"' }
+      { type: 'video/x-matroska; codecs="vp9"', container: 'mkv' },
+      { type: 'video/mp4; codecs="vp09.00.10.08"', container: 'mp4' },
+      { type: 'video/webm; codecs="vp9"', container: 'webm' }
     ]
   };
 
-  // If specific codec requested, check its support
-  if (codec !== 'auto' && codecMap[codec as keyof typeof codecMap]) {
-    const codecs = codecMap[codec as keyof typeof codecMap];
-    for (const codecInfo of codecs) {
-      if (MediaRecorder.isTypeSupported(codecInfo.type)) {
-        return codecInfo.name;
+  let selectedCodec = codec;
+  let selectedContainer = container;
+  
+  // Auto-select best codec and container if not specified
+  if (codec === 'auto' || container === 'auto') {
+    // Try each codec in priority order
+    for (const codecName of codecPriority) {
+      const codecVariants = codecMap[codecName as keyof typeof codecMap];
+      
+      // Try each container in priority order for this codec
+      for (const containerName of containerPriority) {
+        const variant = codecVariants.find(v => v.container === containerName);
+        if (variant && MediaRecorder.isTypeSupported(variant.type)) {
+          selectedCodec = codecName;
+          selectedContainer = containerName;
+          break;
+        }
+      }
+      
+      if (selectedCodec !== 'auto') break;
+      
+      // If no container priority match, try any supported variant for this codec
+      for (const variant of codecVariants) {
+        if (MediaRecorder.isTypeSupported(variant.type)) {
+          selectedCodec = codecName;
+          selectedContainer = variant.container;
+          break;
+        }
+      }
+      
+      if (selectedCodec !== 'auto') break;
+    }
+  } else {
+    // Use specific codec and container combination
+    const codecVariants = codecMap[codec as keyof typeof codecMap];
+    if (codecVariants) {
+      // Try to find exact match first
+      const exactMatch = codecVariants.find(v => v.container === container);
+      if (exactMatch && MediaRecorder.isTypeSupported(exactMatch.type)) {
+        // Keep selected values as-is
+      } else {
+        // Fallback to any supported variant of this codec
+        for (const variant of codecVariants) {
+          if (MediaRecorder.isTypeSupported(variant.type)) {
+            selectedContainer = variant.container;
+            break;
+          }
+        }
+      }
+    }
+  }
+  
+  // Final fallback to basic formats
+  if (selectedCodec === 'auto') {
+    const fallbackTypes = [
+      { type: 'video/webm; codecs="vp9"', codec: 'vp9', container: 'webm' },
+      { type: 'video/webm; codecs="vp8"', codec: 'vp8', container: 'webm' },
+      { type: 'video/mp4; codecs="avc1.42E01E"', codec: 'h264', container: 'mp4' },
+      { type: 'video/webm', codec: 'unknown', container: 'webm' }
+    ];
+    
+    for (const fallback of fallbackTypes) {
+      if (MediaRecorder.isTypeSupported(fallback.type)) {
+        selectedCodec = fallback.codec;
+        selectedContainer = fallback.container;
+        break;
       }
     }
   }
 
-  // Auto-detect best available codec in priority order: AV1 > HEVC > H.264 > VP9
-  const allCodecs = [
-    ...codecMap.av1,
-    ...codecMap.hevc,
-    ...codecMap.h264,
-    ...codecMap.vp9,
-    { name: 'WebM', type: 'video/webm' }
-  ];
+  // Create display name
+  const codecDisplayName = selectedCodec === 'av1' ? 'AV1' :
+                          selectedCodec === 'hevc' ? 'HEVC' :
+                          selectedCodec === 'h264' ? 'H.264' :
+                          selectedCodec === 'vp9' ? 'VP9' :
+                          selectedCodec === 'vp8' ? 'VP8' :
+                          selectedCodec.toUpperCase();
+  
+  const displayName = `${codecDisplayName} (${selectedContainer.toUpperCase()})`;
 
-  for (const codecInfo of allCodecs) {
-    if (MediaRecorder.isTypeSupported(codecInfo.type)) {
-      return codecInfo.name;
-    }
-  }
+  return {
+    codec: selectedCodec,
+    container: selectedContainer,
+    displayName
+  };
+};
 
-  return 'Unknown';
+export const getVideoCodecInfo = (codec: string = 'auto', container: string = 'auto'): string => {
+  return getResolvedFormat(codec, container).displayName;
 };
 
 export const getSupportedCodecs = (): Array<{value: string, label: string, supported: boolean}> => {
