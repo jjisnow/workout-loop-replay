@@ -9,19 +9,20 @@ const Index = () => {
       <div className="fixed inset-0 gradient-secondary opacity-50" />
       
       <div className="relative z-10 container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-        {/* Compact Header for Mobile */}
-        <div className="text-center space-y-2 sm:space-y-4 mb-4 sm:mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full gradient-primary shadow-glow">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 text-white">🏋️</div>
-          </div>
-          
-          <div className="space-y-1 sm:space-y-2">
-            <h1 className="text-2xl sm:text-4xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Form Checker
-            </h1>
-            <p className="text-muted-foreground text-sm sm:text-lg">
-              Live delayed video for form analysis
-            </p>
+        {/* Ultra Compact Header for Mobile */}
+        <div className="mb-3 sm:mb-6">
+          <div className="flex items-center justify-center gap-3 sm:gap-4">
+            <div className="flex-shrink-0 w-12 h-12 sm:w-16 sm:h-16 rounded-full gradient-primary shadow-glow flex items-center justify-center">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 text-white">🏋️</div>
+            </div>
+            <div className="text-center sm:text-left">
+              <h1 className="text-xl sm:text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent leading-tight">
+                Form Checker
+              </h1>
+              <p className="text-muted-foreground text-xs sm:text-base leading-tight">
+                Live delayed video for form analysis
+              </p>
+            </div>
           </div>
         </div>
         

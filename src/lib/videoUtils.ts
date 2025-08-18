@@ -116,10 +116,22 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
       const blob = new Blob(chunks, { type: selectedMimeType });
       const url = URL.createObjectURL(blob);
       
+      // Determine the correct file extension based on the selected container
+      let actualExtension = container;
+      if (container === 'mp4' && selectedMimeType.includes('webm')) {
+        actualExtension = 'webm';
+      } else if (container === 'webm' && selectedMimeType.includes('mp4')) {
+        actualExtension = 'mp4';
+      }
+      
+      // Update filename with correct extension
+      const baseFilename = filename.replace(/\.[^/.]+$/, '');
+      const finalFilename = `${baseFilename}.${actualExtension}`;
+      
       // Create download link
       const a = document.createElement('a');
       a.href = url;
-      a.download = filename;
+      a.download = finalFilename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -212,12 +224,21 @@ export const getVideoCodecInfo = (codec: string = 'auto', container: string = 'a
 };
 
 export const getSupportedCodecs = (): Array<{value: string, label: string, supported: boolean}> => {
+  // Test a wider range of AV1 codec variations for better support detection
+  const av1Supported = [
+    'video/webm; codecs="av01.0.05M.08"',
+    'video/mp4; codecs="av01.0.05M.08"',
+    'video/webm; codecs="av01.0.08M.08"',
+    'video/mp4; codecs="av01.0.08M.08"',
+    'video/webm; codecs="av01"',
+    'video/mp4; codecs="av01"'
+  ].some(type => MediaRecorder.isTypeSupported(type));
+
   return [
     {
       value: 'av1',
       label: 'AV1',
-      supported: MediaRecorder.isTypeSupported('video/webm; codecs="av01.0.05M.08"') || 
-                 MediaRecorder.isTypeSupported('video/mp4; codecs="av01.0.05M.08"')
+      supported: av1Supported
     },
     {
       value: 'hevc',
