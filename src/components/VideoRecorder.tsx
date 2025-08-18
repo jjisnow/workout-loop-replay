@@ -186,12 +186,11 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
     
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const codecInfo = getVideoCodecInfo(selectedCodec, selectedContainer);
       const fileExtension = selectedContainer === 'mkv' ? 'mkv' : 
                            selectedContainer === 'webm' ? 'webm' : 'mp4';
       const filename = `workout-form-${timestamp}.${fileExtension}`;
       
-      await saveFramesAsVideo({
+      const result = await saveFramesAsVideo({
         frames: frameBuffer,
         fps: 10,
         filename,
@@ -199,9 +198,16 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
         container: selectedContainer
       });
 
+      const codecDisplayName = result.codec === 'av1' ? 'AV1' :
+                              result.codec === 'hevc' ? 'HEVC' :
+                              result.codec === 'h264' ? 'H.264' :
+                              result.codec === 'vp9' ? 'VP9' :
+                              result.codec === 'vp8' ? 'VP8' :
+                              result.codec.toUpperCase();
+
       toast({
         title: "Video saved successfully!",
-        description: `Saved as ${filename} using ${codecInfo} codec.`,
+        description: `Saved as ${result.filename} using ${codecDisplayName} (${result.container.toUpperCase()}) format.`,
       });
     } catch (error) {
       console.error('Error saving video:', error);

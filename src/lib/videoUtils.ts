@@ -6,7 +6,13 @@ export interface VideoSaveOptions {
   container?: 'mp4' | 'mkv' | 'webm';
 }
 
-export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void> => {
+export interface VideoSaveResult {
+  codec: string;
+  container: string;
+  filename: string;
+}
+
+export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<VideoSaveResult> => {
   const { frames, fps, filename, codec = 'auto', container = 'auto' } = options;
   
   if (frames.length === 0) {
@@ -72,11 +78,12 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
 
     let selectedMimeType = '';
     let selectedContainer = container;
+    let selectedCodecName = codec;
     
     // Auto-select best codec and container if not specified
     if (codec === 'auto' || container === 'auto') {
       // Try each codec in priority order
-      for (const codecName of codecPriority) {
+        for (const codecName of codecPriority) {
         const codecVariants = codecMap[codecName as keyof typeof codecMap];
         
         // Try each container in priority order for this codec
@@ -85,6 +92,7 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
           if (variant && MediaRecorder.isTypeSupported(variant.type)) {
             selectedMimeType = variant.type;
             selectedContainer = containerName;
+            selectedCodecName = codecName;
             break;
           }
         }
@@ -96,6 +104,7 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
           if (MediaRecorder.isTypeSupported(variant.type)) {
             selectedMimeType = variant.type;
             selectedContainer = variant.container;
+            selectedCodecName = codecName;
             break;
           }
         }
@@ -116,6 +125,7 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
             if (MediaRecorder.isTypeSupported(variant.type)) {
               selectedMimeType = variant.type;
               selectedContainer = variant.container;
+              // selectedCodecName already set to the requested codec
               break;
             }
           }
@@ -136,6 +146,9 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
         if (MediaRecorder.isTypeSupported(fallback.type)) {
           selectedMimeType = fallback.type;
           selectedContainer = fallback.container;
+          selectedCodecName = fallback.type.includes('vp9') ? 'vp9' : 
+                             fallback.type.includes('vp8') ? 'vp8' : 
+                             fallback.type.includes('avc1') ? 'h264' : 'unknown';
           break;
         }
       }
@@ -153,6 +166,11 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
         chunks.push(event.data);
       }
     };
+
+    let resolvePromise: (result: VideoSaveResult) => void;
+    const savePromise = new Promise<VideoSaveResult>((resolve) => {
+      resolvePromise = resolve;
+    });
 
     mediaRecorder.onstop = () => {
       const blob = new Blob(chunks, { type: selectedMimeType });
@@ -172,6 +190,13 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
       
       // Clean up
       URL.revokeObjectURL(url);
+      
+      // Resolve with the actual format used
+      resolvePromise({
+        codec: selectedCodecName,
+        container: selectedContainer,
+        filename: finalFilename
+      });
     };
 
     mediaRecorder.start();
@@ -202,6 +227,8 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
     
     // Stop the stream
     stream.getTracks().forEach(track => track.stop());
+
+    return await savePromise;
 
   } catch (error) {
     console.error('Error saving video:', error);
