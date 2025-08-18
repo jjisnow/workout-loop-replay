@@ -7,7 +7,7 @@ export interface VideoSaveOptions {
 }
 
 export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void> => {
-  const { frames, fps, filename, codec = 'av1', container = 'mp4' } = options;
+  const { frames, fps, filename, codec = 'auto', container = 'auto' } = options;
   
   if (frames.length === 0) {
     throw new Error('No frames to save');
@@ -37,63 +37,105 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
     // Create MediaRecorder with selected codec and container
     const stream = canvas.captureStream(fps);
     
-    // Map codec and container preferences to MIME types
+    // Define codec priority order: AV1 > HEVC > H.264 > VP9
+    const codecPriority = ['av1', 'hevc', 'h264', 'vp9'];
+    
+    // Define container priority order: MKV > MP4 > WebM
+    const containerPriority = ['mkv', 'mp4', 'webm'];
+    
+    // Map codecs to their MIME type variants with container preferences
     const codecMap = {
-      av1: ['video/webm; codecs="av01.0.05M.08"', 'video/mp4; codecs="av01.0.05M.08"'],
-      hevc: ['video/mp4; codecs="hev1.1.6.L93.B0"', 'video/mp4; codecs="hvc1.1.6.L93.B0"'],
-      h264: ['video/mp4; codecs="avc1.42E01E"', 'video/webm; codecs="h264"'],
-      vp9: ['video/webm; codecs="vp9"', 'video/mp4; codecs="vp09.00.10.08"']
+      av1: [
+        { type: 'video/x-matroska; codecs="av01.0.05M.08"', container: 'mkv' },
+        { type: 'video/mp4; codecs="av01.0.05M.08"', container: 'mp4' },
+        { type: 'video/webm; codecs="av01.0.05M.08"', container: 'webm' },
+        { type: 'video/webm; codecs="av01.0.08M.08"', container: 'webm' },
+        { type: 'video/webm; codecs="av01"', container: 'webm' },
+        { type: 'video/mp4; codecs="av01"', container: 'mp4' }
+      ],
+      hevc: [
+        { type: 'video/x-matroska; codecs="hev1.1.6.L93.B0"', container: 'mkv' },
+        { type: 'video/mp4; codecs="hev1.1.6.L93.B0"', container: 'mp4' },
+        { type: 'video/mp4; codecs="hvc1.1.6.L93.B0"', container: 'mp4' }
+      ],
+      h264: [
+        { type: 'video/x-matroska; codecs="avc1.42E01E"', container: 'mkv' },
+        { type: 'video/mp4; codecs="avc1.42E01E"', container: 'mp4' },
+        { type: 'video/webm; codecs="h264"', container: 'webm' }
+      ],
+      vp9: [
+        { type: 'video/x-matroska; codecs="vp9"', container: 'mkv' },
+        { type: 'video/mp4; codecs="vp09.00.10.08"', container: 'mp4' },
+        { type: 'video/webm; codecs="vp9"', container: 'webm' }
+      ]
     };
 
-    const containerMap = {
-      mp4: 'video/mp4',
-      mkv: 'video/x-matroska',
-      webm: 'video/webm'
-    };
-
-    // Get preferred MIME types for selected codec
-    const codecMimeTypes = codecMap[codec] || codecMap.av1;
-    
-    // Try to find a supported MIME type that matches both codec and container preferences
     let selectedMimeType = '';
+    let selectedContainer = container;
     
-    // First, try codec-specific MIME types that match the container
-    for (const mimeType of codecMimeTypes) {
-      if (container === 'mp4' && mimeType.startsWith('video/mp4') && MediaRecorder.isTypeSupported(mimeType)) {
-        selectedMimeType = mimeType;
-        break;
-      } else if (container === 'webm' && mimeType.startsWith('video/webm') && MediaRecorder.isTypeSupported(mimeType)) {
-        selectedMimeType = mimeType;
-        break;
-      } else if (container === 'mkv' && MediaRecorder.isTypeSupported(mimeType)) {
-        // For MKV, we'll use the codec but may need to adjust the container later
-        selectedMimeType = mimeType;
-        break;
+    // Auto-select best codec and container if not specified
+    if (codec === 'auto' || container === 'auto') {
+      // Try each codec in priority order
+      for (const codecName of codecPriority) {
+        const codecVariants = codecMap[codecName as keyof typeof codecMap];
+        
+        // Try each container in priority order for this codec
+        for (const containerName of containerPriority) {
+          const variant = codecVariants.find(v => v.container === containerName);
+          if (variant && MediaRecorder.isTypeSupported(variant.type)) {
+            selectedMimeType = variant.type;
+            selectedContainer = containerName;
+            break;
+          }
+        }
+        
+        if (selectedMimeType) break;
+        
+        // If no container priority match, try any supported variant for this codec
+        for (const variant of codecVariants) {
+          if (MediaRecorder.isTypeSupported(variant.type)) {
+            selectedMimeType = variant.type;
+            selectedContainer = variant.container;
+            break;
+          }
+        }
+        
+        if (selectedMimeType) break;
       }
-    }
-    
-    // Fallback to any supported codec MIME type
-    if (!selectedMimeType) {
-      for (const mimeType of codecMimeTypes) {
-        if (MediaRecorder.isTypeSupported(mimeType)) {
-          selectedMimeType = mimeType;
-          break;
+    } else {
+      // Use specific codec and container combination
+      const codecVariants = codecMap[codec as keyof typeof codecMap];
+      if (codecVariants) {
+        // Try to find exact match first
+        const exactMatch = codecVariants.find(v => v.container === container);
+        if (exactMatch && MediaRecorder.isTypeSupported(exactMatch.type)) {
+          selectedMimeType = exactMatch.type;
+        } else {
+          // Fallback to any supported variant of this codec
+          for (const variant of codecVariants) {
+            if (MediaRecorder.isTypeSupported(variant.type)) {
+              selectedMimeType = variant.type;
+              selectedContainer = variant.container;
+              break;
+            }
+          }
         }
       }
     }
     
-    // Final fallback to any supported format
+    // Final fallback to basic formats
     if (!selectedMimeType) {
       const fallbackTypes = [
-        'video/webm; codecs="vp9"',
-        'video/webm; codecs="vp8"',
-        'video/mp4; codecs="avc1.42E01E"',
-        'video/webm'
+        { type: 'video/webm; codecs="vp9"', container: 'webm' },
+        { type: 'video/webm; codecs="vp8"', container: 'webm' },
+        { type: 'video/mp4; codecs="avc1.42E01E"', container: 'mp4' },
+        { type: 'video/webm', container: 'webm' }
       ];
       
-      for (const mimeType of fallbackTypes) {
-        if (MediaRecorder.isTypeSupported(mimeType)) {
-          selectedMimeType = mimeType;
+      for (const fallback of fallbackTypes) {
+        if (MediaRecorder.isTypeSupported(fallback.type)) {
+          selectedMimeType = fallback.type;
+          selectedContainer = fallback.container;
           break;
         }
       }
@@ -116,17 +158,9 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<void
       const blob = new Blob(chunks, { type: selectedMimeType });
       const url = URL.createObjectURL(blob);
       
-      // Determine the correct file extension based on the selected container
-      let actualExtension = container;
-      if (container === 'mp4' && selectedMimeType.includes('webm')) {
-        actualExtension = 'webm';
-      } else if (container === 'webm' && selectedMimeType.includes('mp4')) {
-        actualExtension = 'mp4';
-      }
-      
-      // Update filename with correct extension
+      // Use the selected container for the file extension
       const baseFilename = filename.replace(/\.[^/.]+$/, '');
-      const finalFilename = `${baseFilename}.${actualExtension}`;
+      const finalFilename = `${baseFilename}.${selectedContainer}`;
       
       // Create download link
       const a = document.createElement('a');
@@ -205,7 +239,7 @@ export const getVideoCodecInfo = (codec: string = 'auto', container: string = 'a
     }
   }
 
-  // Auto-detect best available codec
+  // Auto-detect best available codec in priority order: AV1 > HEVC > H.264 > VP9
   const allCodecs = [
     ...codecMap.av1,
     ...codecMap.hevc,
