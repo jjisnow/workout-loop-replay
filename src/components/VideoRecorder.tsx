@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown } from 'lucide-react';
+import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { saveFramesAsVideo, getVideoCodecInfo, getSupportedCodecs } from '@/lib/videoUtils';
 import { useToast } from '@/hooks/use-toast';
@@ -24,6 +24,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const { toast } = useToast();
   
   const delayedContainerRef = useRef<HTMLDivElement>(null);
@@ -79,7 +80,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
         
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
-          facingMode: 'environment',
+          facingMode: facingMode,
           ...videoConstraints
         }, 
         audio: false 
@@ -102,6 +103,44 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
       
     } catch (error) {
       console.error('Error accessing camera:', error);
+    }
+  };
+
+  const switchCamera = async () => {
+    if (!isStreaming) return;
+    
+    const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(newFacingMode);
+    
+    // Stop current stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    
+    // Start new stream with new facing mode
+    try {
+      const videoConstraints = resolution === '1080p' 
+        ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
+        : { width: { ideal: 1280 }, height: { ideal: 720 } };
+        
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: newFacingMode,
+          ...videoConstraints
+        }, 
+        audio: false 
+      });
+      
+      streamRef.current = stream;
+      
+      if (liveVideoRef.current) {
+        liveVideoRef.current.srcObject = stream;
+        await liveVideoRef.current.play();
+      }
+    } catch (error) {
+      console.error('Error switching camera:', error);
+      // Revert facing mode if switch failed
+      setFacingMode(facingMode);
     }
   };
 
@@ -359,19 +398,19 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
         {/* Controls - Mobile Optimized */}
         <div className="space-y-3">
           {/* Camera Controls */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+          <div className="space-y-2">
             {!isStreaming ? (
               <Button
                 onClick={startStream}
                 variant="fitness"
                 size="lg"
-                className="col-span-2"
+                className="w-full"
               >
                 <Video className="w-4 h-4 mr-2" />
                 Start Camera
               </Button>
             ) : (
-              <>
+              <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <Button
                   onClick={isPaused ? resumeStream : pauseStream}
                   variant={isPaused ? "accent" : "secondary"}
@@ -390,6 +429,14 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                   )}
                 </Button>
                 <Button
+                  onClick={switchCamera}
+                  variant="outline"
+                  size="lg"
+                  title={`Switch to ${facingMode === 'user' ? 'rear' : 'front'} camera`}
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </Button>
+                <Button
                   onClick={stopStream}
                   variant="destructive"
                   size="lg"
@@ -397,7 +444,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                   <VideoOff className="w-4 h-4 mr-2" />
                   Stop
                 </Button>
-              </>
+              </div>
             )}
           </div>
 
