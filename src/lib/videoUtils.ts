@@ -133,22 +133,31 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<Vide
       }
     }
     
-    // Final fallback to basic formats
+    // Final fallback to basic formats following priority order
     if (!selectedMimeType) {
       const fallbackTypes = [
-        { type: 'video/webm; codecs="vp9"', container: 'webm' },
-        { type: 'video/webm; codecs="vp8"', container: 'webm' },
-        { type: 'video/mp4; codecs="avc1.42E01E"', container: 'mp4' },
-        { type: 'video/webm', container: 'webm' }
+        // HEVC fallbacks
+        { type: 'video/x-matroska; codecs="hev1.1.6.L93.B0"', container: 'mkv', codec: 'hevc' },
+        { type: 'video/mp4; codecs="hev1.1.6.L93.B0"', container: 'mp4', codec: 'hevc' },
+        { type: 'video/mp4; codecs="hvc1.1.6.L93.B0"', container: 'mp4', codec: 'hevc' },
+        // H.264 fallbacks  
+        { type: 'video/x-matroska; codecs="avc1.42E01E"', container: 'mkv', codec: 'h264' },
+        { type: 'video/mp4; codecs="avc1.42E01E"', container: 'mp4', codec: 'h264' },
+        { type: 'video/webm; codecs="h264"', container: 'webm', codec: 'h264' },
+        // VP9 fallbacks
+        { type: 'video/x-matroska; codecs="vp9"', container: 'mkv', codec: 'vp9' },
+        { type: 'video/mp4; codecs="vp09.00.10.08"', container: 'mp4', codec: 'vp9' },
+        { type: 'video/webm; codecs="vp9"', container: 'webm', codec: 'vp9' },
+        // Basic fallbacks
+        { type: 'video/webm; codecs="vp8"', container: 'webm', codec: 'vp8' },
+        { type: 'video/webm', container: 'webm', codec: 'unknown' }
       ];
       
       for (const fallback of fallbackTypes) {
         if (MediaRecorder.isTypeSupported(fallback.type)) {
           selectedMimeType = fallback.type;
           selectedContainer = fallback.container;
-          selectedCodecName = fallback.type.includes('vp9') ? 'vp9' : 
-                             fallback.type.includes('vp8') ? 'vp8' : 
-                             fallback.type.includes('avc1') ? 'h264' : 'unknown';
+          selectedCodecName = fallback.codec;
           break;
         }
       }
@@ -322,12 +331,23 @@ export const getResolvedFormat = (codec: string = 'auto', container: string = 'a
     }
   }
   
-  // Final fallback to basic formats
+  // Final fallback to basic formats following priority order
   if (selectedCodec === 'auto') {
     const fallbackTypes = [
-      { type: 'video/webm; codecs="vp9"', codec: 'vp9', container: 'webm' },
-      { type: 'video/webm; codecs="vp8"', codec: 'vp8', container: 'webm' },
+      // HEVC fallbacks
+      { type: 'video/x-matroska; codecs="hev1.1.6.L93.B0"', codec: 'hevc', container: 'mkv' },
+      { type: 'video/mp4; codecs="hev1.1.6.L93.B0"', codec: 'hevc', container: 'mp4' },
+      { type: 'video/mp4; codecs="hvc1.1.6.L93.B0"', codec: 'hevc', container: 'mp4' },
+      // H.264 fallbacks  
+      { type: 'video/x-matroska; codecs="avc1.42E01E"', codec: 'h264', container: 'mkv' },
       { type: 'video/mp4; codecs="avc1.42E01E"', codec: 'h264', container: 'mp4' },
+      { type: 'video/webm; codecs="h264"', codec: 'h264', container: 'webm' },
+      // VP9 fallbacks
+      { type: 'video/x-matroska; codecs="vp9"', codec: 'vp9', container: 'mkv' },
+      { type: 'video/mp4; codecs="vp09.00.10.08"', codec: 'vp9', container: 'mp4' },
+      { type: 'video/webm; codecs="vp9"', codec: 'vp9', container: 'webm' },
+      // Basic fallbacks
+      { type: 'video/webm; codecs="vp8"', codec: 'vp8', container: 'webm' },
       { type: 'video/webm', codec: 'unknown', container: 'webm' }
     ];
     
