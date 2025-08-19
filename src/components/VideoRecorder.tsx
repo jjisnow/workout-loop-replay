@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown, RotateCcw } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown, RotateCcw, AlertTriangle, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { saveFramesAsVideo, getVideoCodecInfo, getSupportedCodecs } from '@/lib/videoUtils';
 import { useToast } from '@/hooks/use-toast';
@@ -25,6 +26,9 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
+  const [hasPermissions, setHasPermissions] = useState<boolean | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const [supportedCodecs, setSupportedCodecs] = useState<string[]>([]);
   const { toast } = useToast();
   
   const delayedContainerRef = useRef<HTMLDivElement>(null);
@@ -72,8 +76,28 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
     });
   }, [delaySeconds, isPaused]);
 
-  const startStream = async () => {
+  const checkCameraPermissions = async () => {
     try {
+      const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
+      setHasPermissions(permissionStatus.state === 'granted');
+      return permissionStatus.state === 'granted';
+    } catch {
+      // Fallback for browsers that don't support permissions API
+      return null;
+    }
+  };
+
+  const startStream = async () => {
+    setErrorMessage('');
+    
+    try {
+      // Check permissions first
+      const hasPermission = await checkCameraPermissions();
+      if (hasPermission === false) {
+        setErrorMessage('Camera permission denied. Please allow camera access and try again.');
+        return;
+      }
+
       const videoConstraints = resolution === '1080p' 
         ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
         : { width: { ideal: 1280 }, height: { ideal: 720 } };
@@ -94,15 +118,41 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
       }
       
       setIsStreaming(true);
+      setHasPermissions(true);
+      setErrorMessage('');
       
       // Start capturing frames at 10 FPS
       captureIntervalRef.current = setInterval(captureFrame, 100);
       
       // Start delayed playback at 10 FPS
       playbackIntervalRef.current = setInterval(playDelayedFrames, 100);
+
+      toast({
+        title: "Camera started",
+        description: "Ready to record your workout form!",
+      });
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error accessing camera:', error);
+      let errorMsg = 'Failed to access camera. ';
+      
+      if (error.name === 'NotAllowedError') {
+        errorMsg += 'Please allow camera permissions and try again.';
+        setHasPermissions(false);
+      } else if (error.name === 'NotFoundError') {
+        errorMsg += 'No camera found on this device.';
+      } else if (error.name === 'NotReadableError') {
+        errorMsg += 'Camera is already in use by another application.';
+      } else {
+        errorMsg += 'Please check your camera connection and try again.';
+      }
+      
+      setErrorMessage(errorMsg);
+      toast({
+        title: "Camera Error",
+        description: errorMsg,
+        variant: "destructive"
+      });
     }
   };
 
@@ -137,10 +187,23 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
         liveVideoRef.current.srcObject = stream;
         await liveVideoRef.current.play();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error switching camera:', error);
       // Revert facing mode if switch failed
       setFacingMode(facingMode);
+      
+      let errorMsg = 'Failed to switch camera. ';
+      if (error.name === 'NotFoundError') {
+        errorMsg += 'The requested camera is not available.';
+      } else {
+        errorMsg += 'Please try again.';
+      }
+      
+      toast({
+        title: "Camera Switch Failed",
+        description: errorMsg,
+        variant: "destructive"
+      });
     }
   };
 
@@ -260,8 +323,19 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
     }
   };
 
-  // Cleanup on unmount
+  // Initialize codec support and permissions check on mount
   useEffect(() => {
+    const initialize = async () => {
+      // Check supported codecs
+      const codecs = getSupportedCodecs();
+      setSupportedCodecs(codecs.map(c => c.value));
+      
+      // Check camera permissions
+      await checkCameraPermissions();
+    };
+    
+    initialize();
+    
     return () => {
       stopStream();
     };
@@ -283,9 +357,41 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
     }
   }, [delaySeconds, captureFrame, playDelayedFrames, isStreaming, isPaused]);
 
+  // Get platform-aware codec info
+  const getCodecMessage = () => {
+    return `Using ${selectedCodec.toUpperCase()} codec`;
+  };
+
   return (
     <Card className={cn("p-3 sm:p-6 shadow-card transition-smooth", className)}>
       <div className="space-y-3 sm:space-y-6">
+        
+        {/* Error/Permission Alerts */}
+        {errorMessage && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
+        )}
+        
+        {hasPermissions === false && !errorMessage && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              Camera access is required to record your workout. Please allow camera permissions when prompted.
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {/* Codec info for advanced users */}
+        {isStreaming && supportedCodecs.length > 0 && (
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              {getCodecMessage()}. Supported formats: {supportedCodecs.join(', ').toUpperCase()}
+            </AlertDescription>
+          </Alert>
+        )}
         {/* Video Display - Mobile Optimized */}
         <div className="space-y-3">
           {/* Delayed Feed - Primary focus on mobile */}
@@ -405,9 +511,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                 variant="fitness"
                 size="lg"
                 className="w-full"
+                disabled={hasPermissions === false}
               >
                 <Video className="w-4 h-4 mr-2" />
-                Start Camera
+                {hasPermissions === false ? 'Camera Access Required' : 'Start Camera'}
               </Button>
             ) : (
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
@@ -635,7 +742,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               </div>
 
               <p className="text-xs text-muted-foreground text-center">
-                Videos saved as {getVideoCodecInfo(selectedCodec, selectedContainer)} format
+                Videos saved as {selectedCodec.toUpperCase()}/{selectedContainer.toUpperCase()} format
               </p>
             </CollapsibleContent>
           </Collapsible>
