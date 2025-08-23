@@ -79,10 +79,13 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
   const checkCameraPermissions = async () => {
     try {
       const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
-      setHasPermissions(permissionStatus.state === 'granted');
-      return permissionStatus.state === 'granted';
+      const isGranted = permissionStatus.state === 'granted';
+      const isDenied = permissionStatus.state === 'denied';
+      setHasPermissions(isDenied ? false : isGranted ? true : null);
+      return isGranted;
     } catch {
       // Fallback for browsers that don't support permissions API
+      setHasPermissions(null);
       return null;
     }
   };
