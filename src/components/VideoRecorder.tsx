@@ -420,7 +420,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               className={cn(
                 "relative bg-secondary rounded-lg overflow-hidden transition-smooth",
                 isFullscreen 
-                  ? "fixed inset-0 z-50 bg-black rounded-none" 
+                  ? "fixed inset-4 z-40 bg-black rounded-lg" 
                   : "aspect-video"
               )}
             >
