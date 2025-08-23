@@ -94,13 +94,6 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
     setErrorMessage('');
     
     try {
-      // Check permissions first
-      const hasPermission = await checkCameraPermissions();
-      if (hasPermission === false) {
-        setErrorMessage('Camera permission denied. Please allow camera access and try again.');
-        return;
-      }
-
       const videoConstraints = resolution === '1080p' 
         ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
         : { width: { ideal: 1280 }, height: { ideal: 720 } };
