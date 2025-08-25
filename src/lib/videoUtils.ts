@@ -2,8 +2,8 @@ export interface VideoSaveOptions {
   frames: string[];
   fps: number;
   filename: string;
-  codec?: 'av1' | 'hevc' | 'h264' | 'vp9';
-  container?: 'mp4' | 'mkv' | 'webm';
+  codec?: 'av1' | 'hevc' | 'h264' | 'vp9' | 'auto';
+  container?: 'mp4' | 'mkv' | 'webm' | 'auto';
 }
 
 export interface VideoSaveResult {
@@ -77,8 +77,8 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<Vide
     };
 
     let selectedMimeType = '';
-    let selectedContainer = container;
-    let selectedCodecName = codec;
+    let selectedContainer: string = container;
+    let selectedCodecName: string = codec;
     
     // Auto-select best codec and container if not specified
     if (codec === 'auto' || container === 'auto') {
@@ -91,8 +91,8 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<Vide
           const variant = codecVariants.find(v => v.container === containerName);
           if (variant && MediaRecorder.isTypeSupported(variant.type)) {
             selectedMimeType = variant.type;
-            selectedContainer = containerName;
-            selectedCodecName = codecName;
+             selectedContainer = containerName as string;
+             selectedCodecName = codecName as string;
             break;
           }
         }
@@ -103,8 +103,8 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<Vide
         for (const variant of codecVariants) {
           if (MediaRecorder.isTypeSupported(variant.type)) {
             selectedMimeType = variant.type;
-            selectedContainer = variant.container;
-            selectedCodecName = codecName;
+           selectedContainer = variant.container as string;
+           selectedCodecName = codecName as string;
             break;
           }
         }
@@ -120,13 +120,31 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<Vide
         if (exactMatch && MediaRecorder.isTypeSupported(exactMatch.type)) {
           selectedMimeType = exactMatch.type;
         } else {
-          // Fallback to any supported variant of this codec
-          for (const variant of codecVariants) {
-            if (MediaRecorder.isTypeSupported(variant.type)) {
-              selectedMimeType = variant.type;
-              selectedContainer = variant.container;
-              // selectedCodecName already set to the requested codec
-              break;
+          // If exact codec/container combo not supported, try other codecs with same container first
+          if (options.container && options.container !== 'auto') {
+            // Try all codecs with the requested container in priority order
+            for (const codecName of codecPriority) {
+              if (codecName === codec) continue; // Skip the requested codec (already tried)
+              const otherCodecVariants = codecMap[codecName as keyof typeof codecMap];
+              const containerMatch = otherCodecVariants?.find(v => v.container === container);
+              if (containerMatch && MediaRecorder.isTypeSupported(containerMatch.type)) {
+                selectedMimeType = containerMatch.type;
+                selectedContainer = container;
+                selectedCodecName = codecName as string;
+                break;
+              }
+            }
+          }
+          
+          // If still no match, fallback to any supported variant of the requested codec
+          if (!selectedMimeType) {
+            for (const variant of codecVariants) {
+              if (MediaRecorder.isTypeSupported(variant.type)) {
+                selectedMimeType = variant.type;
+               selectedContainer = variant.container as string;
+                // selectedCodecName already set to the requested codec
+                break;
+              }
             }
           }
         }
@@ -156,8 +174,8 @@ export const saveFramesAsVideo = async (options: VideoSaveOptions): Promise<Vide
       for (const fallback of fallbackTypes) {
         if (MediaRecorder.isTypeSupported(fallback.type)) {
           selectedMimeType = fallback.type;
-          selectedContainer = fallback.container;
-          selectedCodecName = fallback.codec;
+         selectedContainer = fallback.container as string;
+         selectedCodecName = fallback.codec as string;
           break;
         }
       }
@@ -279,8 +297,8 @@ export const getResolvedFormat = (codec: string = 'auto', container: string = 'a
     ]
   };
 
-  let selectedCodec = codec;
-  let selectedContainer = container;
+  let selectedCodec: string = codec;
+  let selectedContainer: string = container;
   
   // Auto-select best codec and container if not specified
   if (codec === 'auto' || container === 'auto') {
@@ -292,8 +310,8 @@ export const getResolvedFormat = (codec: string = 'auto', container: string = 'a
       for (const containerName of containerPriority) {
         const variant = codecVariants.find(v => v.container === containerName);
         if (variant && MediaRecorder.isTypeSupported(variant.type)) {
-          selectedCodec = codecName;
-          selectedContainer = containerName;
+         selectedCodec = codecName as string;
+         selectedContainer = containerName as string;
           break;
         }
       }
@@ -303,8 +321,8 @@ export const getResolvedFormat = (codec: string = 'auto', container: string = 'a
       // If no container priority match, try any supported variant for this codec
       for (const variant of codecVariants) {
         if (MediaRecorder.isTypeSupported(variant.type)) {
-          selectedCodec = codecName;
-          selectedContainer = variant.container;
+         selectedCodec = codecName as string;
+         selectedContainer = variant.container as string;
           break;
         }
       }
@@ -320,11 +338,28 @@ export const getResolvedFormat = (codec: string = 'auto', container: string = 'a
       if (exactMatch && MediaRecorder.isTypeSupported(exactMatch.type)) {
         // Keep selected values as-is
       } else {
-        // Fallback to any supported variant of this codec
-        for (const variant of codecVariants) {
-          if (MediaRecorder.isTypeSupported(variant.type)) {
-            selectedContainer = variant.container;
-            break;
+        // If exact codec/container combo not supported, try other codecs with same container first
+        if ((container as string) !== 'auto') {
+          // Try all codecs with the requested container in priority order
+          for (const codecName of codecPriority) {
+            if (codecName === codec) continue; // Skip the requested codec (already tried)
+            const otherCodecVariants = codecMap[codecName as keyof typeof codecMap];
+            const containerMatch = otherCodecVariants?.find(v => v.container === container);
+            if (containerMatch && MediaRecorder.isTypeSupported(containerMatch.type)) {
+             selectedCodec = codecName as string;
+             selectedContainer = container as string;
+              break;
+            }
+          }
+        }
+        
+        // If still no match, fallback to any supported variant of the requested codec
+        if (selectedCodec === codec && selectedContainer === container) {
+          for (const variant of codecVariants) {
+            if (MediaRecorder.isTypeSupported(variant.type)) {
+              selectedContainer = variant.container as string;
+              break;
+            }
           }
         }
       }
@@ -353,8 +388,8 @@ export const getResolvedFormat = (codec: string = 'auto', container: string = 'a
     
     for (const fallback of fallbackTypes) {
       if (MediaRecorder.isTypeSupported(fallback.type)) {
-        selectedCodec = fallback.codec;
-        selectedContainer = fallback.container;
+       selectedCodec = fallback.codec as string;
+       selectedContainer = fallback.container as string;
         break;
       }
     }
