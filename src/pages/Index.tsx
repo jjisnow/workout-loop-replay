@@ -1,5 +1,4 @@
 import React from 'react';
-import { WorkoutHeader } from '@/components/WorkoutHeader';
 import { VideoRecorder } from '@/components/VideoRecorder';
 
 const Index = () => {
