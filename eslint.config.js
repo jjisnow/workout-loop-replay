@@ -25,5 +25,8 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-unused-vars": "off",
     },
-  }
+  },
+  // shadcn primitives intentionally export their variants/context alongside components.
+  // Keep Fast Refresh checks enabled for application code, without rewriting the UI kit.
+  { files: ["src/components/ui/**/*.{ts,tsx}"], rules: { "react-refresh/only-export-components": "off" } }
 );

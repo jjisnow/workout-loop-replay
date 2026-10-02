@@ -1,367 +1,108 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Play, Square, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown, RotateCcw, AlertTriangle, Info } from 'lucide-react';
+import { Play, Settings, Video, VideoOff, Pause, Download, Loader2, Maximize, Minimize, ChevronDown, RotateCcw, AlertTriangle, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { saveFramesAsVideo, getVideoCodecInfo, getSupportedCodecs } from '@/lib/videoUtils';
+import { saveFramesAsVideo, getResolvedFormat, getSupportedCodecs, type VideoCodec, type VideoContainer } from '@/lib/videoUtils';
 import { useToast } from '@/hooks/use-toast';
+import { useDelayedCamera, type Resolution } from '@/hooks/useDelayedCamera';
 
-interface VideoRecorderProps {
-  className?: string;
-}
+interface VideoRecorderProps { className?: string }
 
 export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [delaySeconds, setDelaySeconds] = useState(6);
   const [bufferSeconds, setBufferSeconds] = useState(15);
-  const [resolution, setResolution] = useState<'720p' | '1080p'>('720p');
-  const [selectedCodec, setSelectedCodec] = useState<'av1' | 'hevc' | 'h264' | 'vp9'>('av1');
-  const [selectedContainer, setSelectedContainer] = useState<'mp4' | 'mkv' | 'webm'>('mp4');
-  const [frameBuffer, setFrameBuffer] = useState<string[]>([]);
-  const [currentDelayedFrame, setCurrentDelayedFrame] = useState<string | null>(null);
+  const [selectedCodec, setSelectedCodec] = useState<VideoCodec>('auto');
+  const [selectedContainer, setSelectedContainer] = useState<VideoContainer>('auto');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
-  const [hasPermissions, setHasPermissions] = useState<boolean | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [supportedCodecs, setSupportedCodecs] = useState<string[]>([]);
-  const { toast } = useToast();
-  
   const delayedContainerRef = useRef<HTMLDivElement>(null);
-  
-  const liveVideoRef = useRef<HTMLVideoElement>(null);
-  const delayedCanvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const captureFrame = useCallback(() => {
-    if (isPaused || !liveVideoRef.current || !delayedCanvasRef.current) return;
-    const canvas = delayedCanvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const video = liveVideoRef.current;
-    
-    if (ctx && video.videoWidth > 0) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      const frameData = canvas.toDataURL('image/jpeg', 0.8);
-      
-      setFrameBuffer(prevBuffer => {
-        const newBuffer = [...prevBuffer, frameData];
-        // Keep buffer at configured size, drop frames from front when full
-        const maxFrames = bufferSeconds * 10; // 10 FPS
-        if (newBuffer.length > maxFrames) {
-          return newBuffer.slice(newBuffer.length - maxFrames);
-        }
-        return newBuffer;
-      });
-    }
-  }, [bufferSeconds, isPaused]);
-
-  const playDelayedFrames = useCallback(() => {
-    if (isPaused) return;
-    setFrameBuffer(prevBuffer => {
-      const framesToDelay = delaySeconds * 10; // 10 FPS
-      if (prevBuffer.length >= framesToDelay) {
-        const delayedFrame = prevBuffer[prevBuffer.length - framesToDelay];
-        setCurrentDelayedFrame(delayedFrame);
-      }
-      return prevBuffer;
-    });
-  }, [delaySeconds, isPaused]);
-
-  const checkCameraPermissions = async () => {
-    try {
-      const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName });
-      const isGranted = permissionStatus.state === 'granted';
-      const isDenied = permissionStatus.state === 'denied';
-      setHasPermissions(isDenied ? false : isGranted ? true : null);
-      return isGranted;
-    } catch {
-      // Fallback for browsers that don't support permissions API
-      setHasPermissions(null);
-      return null;
-    }
+  const exportRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(false);
+  const { toast } = useToast();
+  const camera = useDelayedCamera(delaySeconds, bufferSeconds);
+  const { isStreaming, isStarting, isPaused, resolution, facingMode, errorMessage, hasDelayedFrame,
+    stats, actualResolution, liveVideoRef, delayedCanvasRef, pauseStream, resumeStream, switchCamera } = camera;
+  const codecs = useMemo(() => getSupportedCodecs(), []);
+  const format = useMemo(() => getResolvedFormat(selectedCodec, selectedContainer), [selectedCodec, selectedContainer]);
+  const startStream = () => { void camera.startStream(); };
+  const stopStream = () => { exportRef.current?.abort(); camera.stopStream(); };
+  const changeDelay = (seconds: number) => {
+    setDelaySeconds(seconds);
+    setBufferSeconds(current => Math.max(current, seconds));
+  };
+  const changeBuffer = (seconds: number) => {
+    setBufferSeconds(seconds);
+    setDelaySeconds(current => Math.min(current, seconds));
   };
 
-  const startStream = async () => {
-    setErrorMessage('');
-    
-    try {
-      const videoConstraints = resolution === '1080p' 
-        ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
-        : { width: { ideal: 1280 }, height: { ideal: 720 } };
-        
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: facingMode,
-          ...videoConstraints
-        }, 
-        audio: false 
-      });
-      
-      streamRef.current = stream;
-      
-      if (liveVideoRef.current) {
-        liveVideoRef.current.srcObject = stream;
-        await liveVideoRef.current.play();
-      }
-      
-      setIsStreaming(true);
-      setHasPermissions(true);
-      setErrorMessage('');
-      
-      // Start capturing frames at 10 FPS
-      captureIntervalRef.current = setInterval(captureFrame, 100);
-      
-      // Start delayed playback at 10 FPS
-      playbackIntervalRef.current = setInterval(playDelayedFrames, 100);
-
-      toast({
-        title: "Camera started",
-        description: "Ready to record your workout form!",
-      });
-      
-    } catch (error: any) {
-      console.error('Error accessing camera:', error);
-      let errorMsg = 'Failed to access camera. ';
-      
-      if (error.name === 'NotAllowedError') {
-        errorMsg += 'Please allow camera permissions and try again.';
-        setHasPermissions(false);
-      } else if (error.name === 'NotFoundError') {
-        errorMsg += 'No camera found on this device.';
-      } else if (error.name === 'NotReadableError') {
-        errorMsg += 'Camera is already in use by another application.';
-      } else {
-        errorMsg += 'Please check your camera connection and try again.';
-      }
-      
-      setErrorMessage(errorMsg);
-      toast({
-        title: "Camera Error",
-        description: errorMsg,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const switchCamera = async () => {
-    if (!isStreaming) return;
-    
-    const newFacingMode = facingMode === 'user' ? 'environment' : 'user';
-    setFacingMode(newFacingMode);
-    
-    // Stop current stream
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
-    
-    // Start new stream with new facing mode
-    try {
-      const videoConstraints = resolution === '1080p' 
-        ? { width: { ideal: 1920 }, height: { ideal: 1080 } }
-        : { width: { ideal: 1280 }, height: { ideal: 720 } };
-        
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: newFacingMode,
-          ...videoConstraints
-        }, 
-        audio: false 
-      });
-      
-      streamRef.current = stream;
-      
-      if (liveVideoRef.current) {
-        liveVideoRef.current.srcObject = stream;
-        await liveVideoRef.current.play();
-      }
-    } catch (error: any) {
-      console.error('Error switching camera:', error);
-      // Revert facing mode if switch failed
-      setFacingMode(facingMode);
-      
-      let errorMsg = 'Failed to switch camera. ';
-      if (error.name === 'NotFoundError') {
-        errorMsg += 'The requested camera is not available.';
-      } else {
-        errorMsg += 'Please try again.';
-      }
-      
-      toast({
-        title: "Camera Switch Failed",
-        description: errorMsg,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const stopStream = () => {
-    pauseStream(); // This will clear intervals
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    
-    setIsStreaming(false);
-    setIsPaused(false);
-    setFrameBuffer([]);
-    setCurrentDelayedFrame(null);
-  };
-
-  const pauseStream = () => {
-    if (captureIntervalRef.current) {
-      clearInterval(captureIntervalRef.current);
-      captureIntervalRef.current = null;
-    }
-    
-    if (playbackIntervalRef.current) {
-      clearInterval(playbackIntervalRef.current);
-      playbackIntervalRef.current = null;
-    }
-    
-    setIsPaused(true);
-  };
-
-  const resumeStream = () => {
-    if (isStreaming) {
-      // Restart capture and playback intervals
-      captureIntervalRef.current = setInterval(captureFrame, 100);
-      playbackIntervalRef.current = setInterval(playDelayedFrames, 100);
-      setIsPaused(false);
-    }
-  };
+  useEffect(() => {
+    mountedRef.current = true;
+    const fullscreen = () => setIsFullscreen(document.fullscreenElement === delayedContainerRef.current && !!document.fullscreenElement);
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setIsFullscreen(false); };
+    const hidden = () => { if (document.hidden) exportRef.current?.abort(); };
+    const pagehide = () => exportRef.current?.abort();
+    document.addEventListener('fullscreenchange', fullscreen);
+    document.addEventListener('keydown', escape);
+    document.addEventListener('visibilitychange', hidden);
+    window.addEventListener('pagehide', pagehide);
+    return () => {
+      mountedRef.current = false;
+      exportRef.current?.abort();
+      document.removeEventListener('fullscreenchange', fullscreen);
+      document.removeEventListener('keydown', escape);
+      document.removeEventListener('visibilitychange', hidden);
+      window.removeEventListener('pagehide', pagehide);
+    };
+  }, []);
 
   const toggleFullscreen = async () => {
-    if (!delayedContainerRef.current) return;
-
+    const target = delayedContainerRef.current;
+    if (!target) return;
     try {
-      if (!isFullscreen) {
-        if (delayedContainerRef.current.requestFullscreen) {
-          await delayedContainerRef.current.requestFullscreen();
-        }
-        setIsFullscreen(true);
-      } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        }
+      if (isFullscreen) {
+        if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen();
         setIsFullscreen(false);
-      }
-    } catch (error) {
-      console.error('Fullscreen error:', error);
+      } else if (target.requestFullscreen) {
+        await target.requestFullscreen();
+        setIsFullscreen(document.fullscreenElement === target);
+      } else { setIsFullscreen(true); } // CSS fullscreen for browsers without this API
+    } catch {
+      setIsFullscreen(true); // a denied native request still has a working in-page fallback
     }
   };
-
-  // Handle fullscreen change events
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
 
   const saveCurrentBuffer = async () => {
-    if (frameBuffer.length === 0) {
-      toast({
-        title: "No frames to save",
-        description: "Start recording to build a frame buffer first.",
-        variant: "destructive"
-      });
-      return;
-    }
-
+    if (exportRef.current) return;
+    const frames = camera.getFramesForExport();
+    if (!frames.length) return;
+    const controller = new AbortController();
+    exportRef.current = controller;
     setIsSaving(true);
-    
+    setSaveProgress(0);
     try {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileExtension = selectedContainer === 'mkv' ? 'mkv' : 
-                           selectedContainer === 'webm' ? 'webm' : 'mp4';
-      const filename = `workout-form-${timestamp}.${fileExtension}`;
-      
       const result = await saveFramesAsVideo({
-        frames: frameBuffer,
-        fps: 10,
-        filename,
-        codec: selectedCodec,
-        container: selectedContainer
+        frames, filename: `workout-form-${timestamp}`, codec: selectedCodec, container: selectedContainer,
+        signal: controller.signal, onProgress: progress => { if (mountedRef.current) setSaveProgress(progress); },
       });
-
-      const codecDisplayName = result.codec === 'av1' ? 'AV1' :
-                              result.codec === 'hevc' ? 'HEVC' :
-                              result.codec === 'h264' ? 'H.264' :
-                              result.codec === 'vp9' ? 'VP9' :
-                              result.codec === 'vp8' ? 'VP8' :
-                              result.codec.toUpperCase();
-
-      toast({
-        title: "Video saved successfully!",
-        description: `Saved as ${result.filename} using ${codecDisplayName} (${result.container.toUpperCase()}) format.`,
-      });
+      if (mountedRef.current) toast({ title: 'Video download started', description: `${result.filename} (${result.codec.toUpperCase()}). Tap Resume to continue.` });
     } catch (error) {
-      console.error('Error saving video:', error);
-      toast({
-        title: "Error saving video",
-        description: "There was a problem saving your video. Please try again.",
-        variant: "destructive"
-      });
+      if (mountedRef.current && !controller.signal.aborted) toast({ title: 'Could not export video', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
     } finally {
-      setIsSaving(false);
+      exportRef.current = null;
+      if (mountedRef.current) setIsSaving(false);
     }
-  };
-
-  // Initialize codec support and permissions check on mount
-  useEffect(() => {
-    const initialize = async () => {
-      // Check supported codecs
-      const codecs = getSupportedCodecs();
-      setSupportedCodecs(codecs.map(c => c.value));
-      
-      // Check camera permissions
-      await checkCameraPermissions();
-    };
-    
-    initialize();
-    
-    return () => {
-      stopStream();
-    };
-  }, []);
-
-  // Update delay buffer when delay changes
-  useEffect(() => {
-    if (isStreaming) {
-      // Clear existing intervals and restart with new timing
-      if (captureIntervalRef.current) {
-        clearInterval(captureIntervalRef.current);
-        captureIntervalRef.current = setInterval(captureFrame, 100);
-      }
-      
-      if (playbackIntervalRef.current) {
-        clearInterval(playbackIntervalRef.current);
-        playbackIntervalRef.current = setInterval(playDelayedFrames, 100);
-      }
-    }
-  }, [delaySeconds, captureFrame, playDelayedFrames, isStreaming, isPaused]);
-
-  // Get platform-aware codec info
-  const getCodecMessage = () => {
-    return `Using ${selectedCodec.toUpperCase()} codec`;
   };
 
   return (
     <Card className={cn("p-3 sm:p-6 shadow-card transition-smooth", className)}>
       <div className="space-y-3 sm:space-y-6">
-        
+
         {/* Error/Permission Alerts */}
         {errorMessage && (
           <Alert variant="destructive">
@@ -369,22 +110,15 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
             <AlertDescription>{errorMessage}</AlertDescription>
           </Alert>
         )}
-        
-        {hasPermissions === false && !errorMessage && (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              Camera access is required to record your workout. Please allow camera permissions when prompted.
-            </AlertDescription>
-          </Alert>
-        )}
-        
+
+
+
         {/* Codec info for advanced users */}
-        {isStreaming && supportedCodecs.length > 0 && (
+        {isStreaming && (
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              {getCodecMessage()}. Supported formats: {supportedCodecs.join(', ').toUpperCase()}
+              Capture targets 10 fps. {format ? `Export: ${format.displayName}.` : 'Video export is unavailable in this browser.'}
             </AlertDescription>
           </Alert>
         )}
@@ -396,9 +130,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               <h3 className="text-sm font-medium">
                 Delayed View ({delaySeconds}s)
               </h3>
-              {currentDelayedFrame && (
+              {hasDelayedFrame && (
                 <Button
                   onClick={toggleFullscreen}
+                  aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                   variant="ghost"
                   size="sm"
                   className="h-6 w-6 p-0"
@@ -411,22 +146,21 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                 </Button>
               )}
             </div>
-            <div 
+            <div
               ref={delayedContainerRef}
               className={cn(
                 "relative bg-secondary rounded-lg overflow-hidden transition-smooth",
-                isFullscreen 
-                  ? "fixed inset-4 z-40 bg-black rounded-lg" 
+                isFullscreen
+                  ? "fixed inset-0 z-50 bg-black rounded-none"
                   : "aspect-video"
               )}
             >
-              {currentDelayedFrame ? (
-                <img
-                  src={currentDelayedFrame}
-                  alt="Delayed feed"
-                  className="w-full h-full object-cover animate-fade-in"
-                />
-              ) : (
+              <canvas
+                ref={delayedCanvasRef}
+                aria-label={`Camera view delayed by ${delaySeconds} seconds`}
+                className={cn('w-full h-full object-contain', !hasDelayedFrame && 'hidden')}
+              />
+              {!hasDelayedFrame && (
                 <div className="w-full h-full flex items-center justify-center">
                   <div className="text-center space-y-2">
                     <div className="w-12 h-12 sm:w-16 sm:h-16 mx-auto rounded-full bg-accent/20 flex items-center justify-center">
@@ -434,10 +168,10 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                     </div>
                     <p className="text-muted-foreground text-xs sm:text-sm">
                       {isStreaming && !isPaused
-                        ? frameBuffer.length > delaySeconds * 10 
-                          ? 'Delayed feed active'
+                        ? stats.megabytes > 60 && stats.seconds < delaySeconds
+                          ? 'Buffer memory limit reached. Lower resolution or delay.'
                           : 'Building delay buffer...'
-                        : isPaused 
+                        : isPaused
                           ? 'Feed paused'
                           : 'Waiting for camera'
                       }
@@ -445,7 +179,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                   </div>
                 </div>
               )}
-              
+
               {/* Fullscreen overlay controls */}
               {isFullscreen && (
                 <div className="absolute top-4 right-4">
@@ -494,8 +228,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
           </div>
         </div>
 
-        {/* Hidden canvas for frame capture */}
-        <canvas ref={delayedCanvasRef} style={{ display: 'none' }} />
+
 
         {/* Controls - Mobile Optimized */}
         <div className="space-y-3">
@@ -507,14 +240,15 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                 variant="fitness"
                 size="lg"
                 className="w-full"
-                disabled={hasPermissions === false}
+                disabled={isStarting || isSaving}
               >
                 <Video className="w-4 h-4 mr-2" />
-                {hasPermissions === false ? 'Camera Access Required' : 'Start Camera'}
+                {isStarting ? 'Starting camera…' : 'Start Camera'}
               </Button>
             ) : (
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 <Button
+                  disabled={isSaving || isStarting}
                   onClick={isPaused ? resumeStream : pauseStream}
                   variant={isPaused ? "accent" : "secondary"}
                   size="lg"
@@ -532,6 +266,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
                   )}
                 </Button>
                 <Button
+                  disabled={isSaving || isStarting}
                   onClick={switchCamera}
                   variant="outline"
                   size="lg"
@@ -560,6 +295,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
             <div className="bg-secondary/50 rounded-lg p-2">
               <p className="text-xs text-muted-foreground">Quality</p>
               <p className="text-lg font-semibold text-primary">{resolution}</p>
+              {actualResolution && <p className="text-xs text-muted-foreground">{actualResolution}</p>}
             </div>
           </div>
 
@@ -568,44 +304,49 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
             <div className="text-center">
               <div className={cn(
                 "inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium transition-smooth",
-                isPaused 
+                isPaused
                   ? "bg-fitness-warning/20 text-fitness-warning"
                   : "bg-fitness-success/20 text-fitness-success"
               )}>
                 <div className={cn(
                   "w-2 h-2 rounded-full transition-smooth",
-                  isPaused 
+                  isPaused
                     ? "bg-fitness-warning"
                     : "bg-fitness-success animate-pulse"
                 )} />
                 <span>{isPaused ? 'Paused' : 'Recording'}</span>
-                <span className="text-xs opacity-70">• {Math.round(frameBuffer.length / 10)}s</span>
+                <span className="text-xs opacity-70">• {stats.seconds.toFixed(1)}s</span>
               </div>
             </div>
           )}
 
+          {isStarting && <Button onClick={stopStream} variant="secondary" className="w-full">Cancel camera request</Button>}
           {/* Save Controls */}
-          {frameBuffer.length > 0 && (
+          {stats.frames > 0 && (
             <Button
               onClick={saveCurrentBuffer}
               variant="outline"
               size="lg"
               className="w-full"
-              disabled={isSaving}
+              disabled={isSaving || !format || isStarting}
             >
               {isSaving ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
+                  Exporting {Math.round(saveProgress * 100)}%
                 </>
               ) : (
                 <>
                   <Download className="w-4 h-4 mr-2" />
-                  Save Video ({Math.round(frameBuffer.length / 10)}s)
+                  Save Video ({stats.seconds.toFixed(1)}s)
                 </>
               )}
             </Button>
           )}
+
+          {isSaving && <Button onClick={() => exportRef.current?.abort()} variant="secondary" className="w-full">Cancel export</Button>}
+          {isPaused && !isSaving && <p className="text-xs text-muted-foreground text-center">Resume starts a fresh delay buffer. Saving pauses capture.</p>}
+          <p className="text-xs text-muted-foreground text-center">{stats.megabytes.toFixed(1)} MB buffered · video only · keep this tab visible</p>
 
           {/* Advanced Settings - Collapsible */}
           <Collapsible open={showSettings} onOpenChange={setShowSettings}>
@@ -619,18 +360,18 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               {/* Delay Settings */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Delay</label>
+                  <label htmlFor="delay-setting" className="text-sm font-medium">Delay</label>
                   <span className="text-sm text-accent font-semibold">{delaySeconds}s</span>
                 </div>
-                <input
+                <input id="delay-setting"
                   type="range"
                   min="1"
                   max="30"
                   value={delaySeconds}
-                  onChange={(e) => setDelaySeconds(Number(e.target.value))}
+                  onChange={(e) => changeDelay(Number(e.target.value))}
                   className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
-                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary 
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary
                     [&::-webkit-slider-thumb]:transition-smooth"
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
@@ -642,18 +383,18 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               {/* Buffer Size Settings */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Buffer Size</label>
+                  <label htmlFor="buffer-setting" className="text-sm font-medium">Buffer Size</label>
                   <span className="text-sm text-accent font-semibold">{bufferSeconds}s</span>
                 </div>
-                <input
+                <input id="buffer-setting"
                   type="range"
                   min="5"
                   max="60"
                   value={bufferSeconds}
-                  onChange={(e) => setBufferSeconds(Number(e.target.value))}
+                  onChange={(e) => changeBuffer(Number(e.target.value))}
                   className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
-                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent 
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-accent
                     [&::-webkit-slider-thumb]:transition-smooth"
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
@@ -665,18 +406,19 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               {/* Resolution Settings */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium">Resolution</label>
+                  <label htmlFor="resolution-setting" className="text-sm font-medium">Resolution</label>
                   <span className="text-sm text-accent font-semibold">{resolution}</span>
                 </div>
-                <input
+                <input id="resolution-setting"
                   type="range"
                   min="0"
                   max="1"
                   value={resolution === '1080p' ? 1 : 0}
-                  onChange={(e) => setResolution(e.target.value === '1' ? '1080p' : '720p')}
+                  disabled={isStarting || isSaving}
+                  onChange={(e) => camera.changeResolution((e.target.value === '1' ? '1080p' : '720p') as Resolution)}
                   className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer transition-smooth
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 
-                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary 
+                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                    [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary
                     [&::-webkit-slider-thumb]:transition-smooth"
                 />
                 <div className="flex justify-between text-xs text-muted-foreground">
@@ -689,10 +431,11 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Video Codec</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {getSupportedCodecs().map((codec) => (
+                  <Button onClick={() => setSelectedCodec('auto')} variant={selectedCodec === 'auto' ? 'fitness' : 'outline'} size="sm">Auto</Button>
+                  {codecs.map((codec) => (
                     <Button
                       key={codec.value}
-                      onClick={() => setSelectedCodec(codec.value as any)}
+                      onClick={() => setSelectedCodec(codec.value)}
                       variant={selectedCodec === codec.value ? 'fitness' : codec.supported ? 'outline' : 'secondary'}
                       size="sm"
                       className="text-xs"
@@ -709,7 +452,8 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               {/* Container Format Selection */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">Container Format</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button onClick={() => setSelectedContainer('auto')} variant={selectedContainer === 'auto' ? 'fitness' : 'outline'} size="sm">Auto</Button>
                   <Button
                     onClick={() => setSelectedContainer('mp4')}
                     variant={selectedContainer === 'mp4' ? 'fitness' : 'outline'}
@@ -738,7 +482,7 @@ export const VideoRecorder: React.FC<VideoRecorderProps> = ({ className }) => {
               </div>
 
               <p className="text-xs text-muted-foreground text-center">
-                Videos saved as {selectedCodec.toUpperCase()}/{selectedContainer.toUpperCase()} format
+                {format ? `Will export as ${format.displayName}. Unsupported preferences fall back to an available format.` : 'Video export is unavailable in this browser.'}
               </p>
             </CollapsibleContent>
           </Collapsible>
